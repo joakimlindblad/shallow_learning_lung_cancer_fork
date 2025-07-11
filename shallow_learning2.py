@@ -82,10 +82,10 @@ def init_knn():
     return GridSearchCV(knn, param_grid, cv=5, scoring='roc_auc', n_jobs=-1)
 
 model_registry = {
-    "RF": init_rf,
+    #"RF": init_rf,
     "LogReg": init_logreg,
-    "SVM": init_svm,
-    "KNN": init_knn,
+    #"SVM": init_svm,
+    #"KNN": init_knn,
     #"Random": lambda: RandomClassifier()
 }
 
@@ -263,7 +263,11 @@ for name_comb in name_combination_list:
         # Permutation importance (if enabled)
         if PERMUTE_FEATURES and permutation_importances:
             avg_perm = np.mean(permutation_importances, axis=0)
-            np.save(f"plots/{experiment_name}_{model_name}_perm_importance.npy", avg_perm)
+            #np.save(f"plots/{experiment_name}_{model_name}_perm_importance.npy", avg_perm)
+            # Save permutation importance as CSV with feature names
+            perm_df = pd.DataFrame({'feature': feature_list, 'importance': avg_perm})
+            perm_df.to_csv(f"plots/{experiment_name}_{model_name}_perm_importance.csv", index=False)
+
             # Optionally plot
             plot_feature_importances(avg_perm, feature_list,
                 f"Permutation Importances: {experiment_name} {model_name}",

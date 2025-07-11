@@ -26,26 +26,6 @@ from functools import reduce
 from sklearn.metrics import accuracy_score, roc_auc_score
 
 
-"""
-def get_best_cutoff(data, feature):
-    df = data.copy()
-    best_p_value = 10
-    #data dataframe(features, time, event)
-    for cutoff in np.percentile(df[feature], np.arange(10, 90, 1)):  # Try cutoffs from 10th to 90th percentile
-        df['group'] = (df[feature] > cutoff).astype(int)  # Split into two groups: 0 (low), 1 (high)
-    
-        # Perform log-rank test
-        results = logrank_test(df['time'][df['group'] == 0], 
-                               df['time'][df['group'] == 1],
-                               event_observed_A=df['event'][df['group'] == 0],
-                               event_observed_B=df['event'][df['group'] == 1])
-    
-        if results.p_value < best_p_value:
-            best_p_value = results.p_value
-            best_cutoff = cutoff
-
-    return best_cutoff
-"""
 
 
 def dichotomize_clinpars(data):
