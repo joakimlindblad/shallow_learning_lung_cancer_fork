@@ -88,11 +88,11 @@ def multivariate_coxregression(data, p_values):
     cph = CoxPHFitter()
     cph.fit(data, duration_col="time", event_col="event")
     summary = cph.summary.reset_index()
-    print(summary)
+    #print(summary)
     summary = summary[["covariate", 'coef', 'exp(coef)', 'exp(coef) lower 95%', 'exp(coef) upper 95%', "p"]]
     summary.columns = ['Feature', 'Coefficient', 'Hazard Ratio', 'Lower CI', 'Upper CI', "p"]
 
-    print(summary)
+    #print(summary)
     fig = plt.figure(figsize=(12, 8))  # Adjust figure size
     fig = fp.forestplot(summary, estimate="Hazard Ratio", ll="Lower CI", hl="Upper CI", pval="p", ylabel="confidence interval", xlabel="Coefficient", varlabel="Feature",flush=False,figsize=(12,8), **{'fontfamily': 'sans-serif'} )
     plt.axvline(x=1, color='red', linestyle='--', label='Vertical Line')
@@ -129,7 +129,7 @@ def univariate_coxregression(data, filename="univariatecox_features.png"):
     # Loop over each feature in the DataFrame (except 'time' and 'event')
     for feature in data.columns:
         if feature not in ['time', 'event']:  # Skip time and event columns
-            print(feature)
+            #print(feature)
             # Select only the 'time', 'event', and current feature
             temp_data = data[['time', 'event', feature]]
             if temp_data[feature].var() == 0:
@@ -149,7 +149,7 @@ def univariate_coxregression(data, filename="univariatecox_features.png"):
     summary_df = pd.DataFrame(results, columns=['Feature', 'Coefficient', 'Hazard Ratio', 'Lower CI', 'Upper CI', 'p-value'])
 
     # Print the summary
-    print(summary_df)
+    #print(summary_df)
     summary_features = summary_df[~summary_df["Feature"].str.endswith(("pred", "logit"), na=False)]
     summary_models = summary_df[summary_df["Feature"].str.endswith("pred", na=False)]
 
@@ -199,6 +199,95 @@ def univariate_coxregression(data, filename="univariatecox_features.png"):
     
     return p_values
 
+def plot_kaplan_meier_subplots(
+    data, time_col, event_col, feature_cols, fig_title, plot_names, ncols=3, out_path=None
+):
+    import math
+    n_plots = len(feature_cols)
+    nrows = math.ceil(n_plots / ncols)
+    fig, axes = plt.subplots(nrows, ncols, figsize=(5 * ncols, 4 * nrows), squeeze=False)
+    axes = axes.flatten()
+
+    for idx, (feature_col, plot_name) in enumerate(zip(feature_cols, plot_names)):
+        ax = axes[idx]
+        kmf = KaplanMeierFitter()
+        for value in [0, 1]:
+            subset = data[data[feature_col] == value]
+            if len(subset) == 0:
+                continue
+            kmf.fit(subset[time_col], event_observed=subset[event_col],
+                    label="High" if value == 1 else "Low")
+
+            kmf.plot_survival_function(ci_show=True, ax=ax)
+        fraction_positive = data[feature_col].mean()
+        fraction_text = f"Frac. high: {fraction_positive:.2f}"
+        ax.text(0.5, 0.1, fraction_text, transform=ax.transAxes, fontsize=10,
+                bbox=dict(facecolor='white', alpha=0.5))
+        ax.set_title(plot_name)
+        ax.set_xlabel("Time")
+        ax.set_ylabel("Survival probability")
+        ax.grid(True)
+        ax.set_ylim(0, 1)
+        ax.set_xlim(0, 1825)
+        ax.legend()
+    
+    # Hide any unused axes
+    for j in range(idx + 1, len(axes)):
+        axes[j].axis('off')
+    plt.suptitle(fig_title)
+    plt.tight_layout(rect=[0, 0, 1, 0.97])
+    plt.subplots_adjust(hspace=0.4)
+    if out_path:
+        plt.savefig(out_path)
+    #plt.show()
+
+
+def plot_model_kaplan_meier(data, time_col, event_col, model_pred_cols, fig_title, out_path=None):
+    import math
+    n_plots = len(model_pred_cols)
+    ncols = 3
+    nrows = math.ceil(n_plots / ncols)
+    fig, axes = plt.subplots(nrows, ncols, figsize=(5 * ncols, 4 * nrows), squeeze=False)
+    axes = axes.flatten()
+
+    for idx, col in enumerate(model_pred_cols):
+        ax = axes[idx]
+        # Use pre-computed dichotomized column if available, otherwise dichotomize at 0.5 or median
+        if set(data[col].unique()) <= {0, 1}:
+            bin_col = col
+        else:
+            cutoff = 0.5  # or np.median(data[col])
+            bin_col = f"{col}_bin"
+            data[bin_col] = (data[col] > cutoff).astype(int)
+        kmf = KaplanMeierFitter()
+        for value in [0, 1]:
+            subset = data[data[bin_col] == value]
+            if len(subset) == 0:
+                continue
+            kmf.fit(subset[time_col], event_observed=subset[event_col],
+                    label="High" if value == 1 else "Low")
+            kmf.plot_survival_function(ci_show=True, ax=ax)
+        fraction_positive = data[bin_col].mean()
+        fraction_text = f"Frac. high: {fraction_positive:.2f}"
+        ax.text(0.5, 0.1, fraction_text, transform=ax.transAxes, fontsize=10,
+                bbox=dict(facecolor='white', alpha=0.5))
+        ax.set_title(col)
+        ax.set_xlabel("Time")
+        ax.set_ylabel("Survival probability")
+        ax.grid(True)
+        ax.set_ylim(0, 1)
+        ax.set_xlim(0, 1825)
+        ax.legend()
+        
+        
+    for j in range(idx + 1, len(axes)):
+        axes[j].axis('off')
+    plt.suptitle(fig_title)
+    plt.tight_layout(rect=[0, 0, 1, 0.97])
+    plt.subplots_adjust(hspace=0.4)
+    if out_path:
+        plt.savefig(out_path)
+    #plt.show()
 
 
 def plot_kaplan_meier(data, time_col, event_col, feature_col, name):
@@ -288,7 +377,7 @@ def get_extended_preds():
     names = [x.replace("_predictions.csv", "") for x in os.listdir("./preds/") if x .endswith("_predictions.csv")]
     all_model_preds = []
     for experiment_name in names:
-        print(experiment_name)
+        #print(experiment_name)
         preds = pd.read_csv(os.path.join("./preds/", experiment_name + "_predictions.csv"))
         logits = pd.read_csv(os.path.join("./preds/", experiment_name + "_logits.csv"))
         preds = preds.melt(var_name="ID", value_name="pred")
@@ -297,8 +386,8 @@ def get_extended_preds():
         logits.columns = ["ID", experiment_name + " logit"]
         patient_preds = pd.merge(logits, preds.drop(columns=["ID"]), left_index=True, right_index=True)#, on="ID")
         all_model_preds.append(patient_preds)
-        print(patient_preds)
-    print("merging")
+        #print(patient_preds)
+    #print("merging")
     
     model_pred1 = all_model_preds[0]
     all_model_preds = all_model_preds[1:]
@@ -307,7 +396,7 @@ def get_extended_preds():
 
     all_model_preds = model_pred1
     #all_model_preds = reduce(lambda left, right: pd.merge(left, right, on='ID', how="outer"), all_model_preds)
-    print("merge done")
+    #print("merge done")
     return names, all_model_preds
 
 
@@ -324,17 +413,43 @@ experiment_names, all_models_preds = get_patient_preds()#get_extended_preds()##
         
 patient_data = pd.read_csv("patient_densities_morphologies.csv")
 patient_data['ID'] = patient_data['ID'].astype(float)
-print(all_models_preds)
+#print(all_models_preds)
 all_models_preds['ID'] = all_models_preds['ID'].astype(float)
 
 patient_data = dichotomize_clinpars(patient_data)
 patient_data = cencor_after5years(patient_data)
 
 patient_data_model_preds = pd.merge(patient_data, all_models_preds, on="ID")
-print(patient_data_model_preds)
-print(patient_data_model_preds[["ID", "label", "clinical parameters logit", "clinical parameters pred"]])
+#print(patient_data_model_preds)
+#print(patient_data_model_preds[["ID", "label", "clinical parameters logit", "clinical parameters pred"]])
 
 patient_data = patient_data_model_preds
+
+
+
+
+clinical_features = ['Age', 'Performance status', 'Stage', 'Gender', 'Smoking', 'LUAD']  # Edit to match your columns
+
+density_features = [
+    "Stroma CD4_Single",
+    "Stroma CD4_Treg",
+    "Stroma CD8_Single",
+    "Stroma CD8_Treg",
+    "Stroma B_cells",
+    "Tumor CD4_Single",
+    "Tumor CD4_Treg",
+    "Tumor CD8_Single",
+    "Tumor CD8_Treg",
+    "Tumor B_cells"
+]
+
+morphology_features = ['Nucleus Area', 'Nucleus Compactness', 'Nucleus Axis Ratio']  # Replace with actual names
+
+# For models, assuming your prediction columns are named as e.g. 'clinical parameters pred', 'densities pred', etc.
+model_pred_cols = [
+    col for col in patient_data.columns if col.endswith('pred')
+]
+
 
 
 #print(patient_data["densities pred"].values)
@@ -354,12 +469,39 @@ multivariate_coxregression(patient_data, p_values)
 
 
 
-for feature in cutoffs:
+"""for feature in cutoffs:
     plot_kaplan_meier(patient_data, "time", "event", feature, feature + ".png")
 
 for feature in ['LUAD', 'Age', 'Gender', 'Smoking', 'Stage', 'Performance status']:
     plot_kaplan_meier(patient_data, "time", "event", feature, feature + ".png")
-
+"""
 #for name in experiment_names:
 #    plot_kaplan_meier(patient_data, "time", "event", name + " pred", name + ".png")
 
+# Group names for plot titles (shorter is better in subplot titles)
+clinical_titles = ["Age", "Performance status", "Stage", "Gender", "Smoking", "LUAD"]
+density_titles = density_features  # or custom short names
+morph_titles = ["Nucleus area", "Nucleus compactness", "Nucleus axis ratio"]
+
+print("Columns in patient_data:")
+print(patient_data.columns.tolist())
+
+plot_kaplan_meier_subplots(
+    patient_data, "time", "event", clinical_features, "Kaplan-Meier: Clinical Parameters",
+    clinical_titles, ncols=3, out_path="km_clinical.png"
+)
+
+plot_kaplan_meier_subplots(
+    patient_data, "time", "event", density_features, "Kaplan-Meier: Cell Densities",
+    density_titles, ncols=3, out_path="km_densities.png"
+)
+
+plot_kaplan_meier_subplots(
+    patient_data, "time", "event", morphology_features, "Kaplan-Meier: Morphologies",
+    morph_titles, ncols=3, out_path="km_morphologies.png"
+)
+
+plot_model_kaplan_meier(
+    patient_data, "time", "event", model_pred_cols, "Kaplan-Meier: Model Predictions",
+    out_path="km_models.png"
+)
