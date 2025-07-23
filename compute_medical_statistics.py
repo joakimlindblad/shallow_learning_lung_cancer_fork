@@ -20,13 +20,86 @@ import seaborn as sns
 from lifelines import KaplanMeierFitter
 
 import os
+import re
 
 from functools import reduce
 
 from sklearn.metrics import accuracy_score, roc_auc_score
+import matplotlib.font_manager as fm
+from forestplot_custom import simple_forestplot
+
+def apply_feature_font(fig, feature_list, fontfamily, fontsize, fontstyle='normal', fontweight='normal'):
+
+    font_prop = fm.FontProperties(
+        family=fontfamily,
+        size=fontsize,
+        style=fontstyle,
+        weight=fontweight
+    )
+    for text in fig.texts:
+        text.set_fontproperties(font_prop)
+def make_forestplot(
+    df,
+    estimate="Hazard Ratio",
+    ll="Lower CI",
+    hl="Upper CI",
+    varlabel="Feature",
+    pval="p-value",
+    xlabel="Hazard ratio",
+    ylabel="Confidence interval",
+    fontsize=18,
+    pval_fontsize=18,
+    tick_fontsize=14,
+    fontfamily="Arial",
+    axvline=1,
+    axvline_color='red',
+    axvline_style='--',
+    labelpad=-525,
+    tight_layout=True,
+):
+    # Create forestplot
+    fig = fp.forestplot(
+        df,
+        estimate=estimate,
+        ll=ll,
+        hl=hl,
+        varlabel=varlabel,
+        flush=False,
+        pval=pval,
+        ylabel=ylabel,
+        xlabel=xlabel,
+        figsize=(12,8),
+        fontsize=fontsize,
+        
+        
+    )
+    ax = plt.gca()
+    for label in ax.get_yticklabels():
+        label.set_fontfamily(fontfamily)
+        label.set_horizontalalignment('left')
+    fig.set_ylabel(ylabel, labelpad=labelpad, ha="left", fontsize=20)
+
+    # Set font size for p-values
+    for text in fig.texts:
+        if re.search(r"\d", text.get_text()):
+            text.set_fontsize(pval_fontsize)
+    # Set x-axis tick label font size
+    fig.tick_params(axis='x', labelsize=tick_fontsize)
+
+    # Reference line at HR = 1
+    plt.axvline(x=axvline, color=axvline_color, linestyle=axvline_style, label=f'HR = {axvline}')
+    if tight_layout:
+        plt.tight_layout()
 
 
+    #apply_feature_font(fig, df[varlabel].tolist(), 'Arial', fontsize, 'italic', 'normal')
+    for label in fig.get_yticklabels():
+        print(label.get_fontfamily())
+        #label.set_fontfamily('Arial')
+        #label.set_fontstyle("italic")
+        #label.set_ha("left") 
 
+    return fig
 
 def dichotomize_clinpars(data):
     data["Age"] = data["Age"].map(lambda x: 1 if x > 70 else 0)
@@ -37,6 +110,7 @@ def dichotomize_clinpars(data):
 def cencor_after5years(data):
     data.loc[data["time"] > 5*365, "event"] = 0
     return data
+
 
 def get_best_cutoff(data, feature):
     df = data.copy()
@@ -64,14 +138,17 @@ def get_best_cutoff(data, feature):
             best_cutoff = cutoff
 
     # Return the best cutoff, or None if no valid cutoff was found
+    print(feature, best_p_value)
     return best_cutoff
 
 def get_all_best_cutoffs(data, experiments):
     #for exp in experiments:
     #    data = data.drop(columns=[exp + " pred"])
-    data = data.drop(columns=["ID", "label", 'LUAD', 'Age', 'Gender', 'Smoking', 'Stage', 'Performance status'])
+    data = data.drop(columns=["ID", "label", 'LUAD', 'Age', 'Sex (Male)', 'Smoking', 'Stage', 'Performance status'])
+    data = data.drop(columns=[col for col in data.columns if col.endswith("pred.")])
+    data = data.drop(columns=[col for col in data.columns if col.endswith("logit")])
     cutoffs = {}
-    for column in data.columns:
+    for column in tqdm(data.columns):
         if column in ["time", "event"]:
             continue
         cutoff = get_best_cutoff(data, column)
@@ -79,11 +156,168 @@ def get_all_best_cutoffs(data, experiments):
 
     return cutoffs
 
+def forward_stepwise_coxregression(
+    data,
+    p_values,
+    threshold=0.05,
+    plot_path="forward_stepwise_cox_forestplot.png"
+):
+    """
+    Forward stepwise Cox regression with features significant in univariate Cox (p<0.05),
+    except those ending with 'pred' or 'logit'.
+    Starts with the single best feature, then adds features one by one if they are significant.
+    Saves a forest plot and returns the model, selected features, and summary.
+    """
+    from lifelines import CoxPHFitter
+    import matplotlib.pyplot as plt
+    import forestplot as fp
+
+    # Use only univariately significant features, except model outputs
+    eligible_features = [
+        f for f in p_values
+        if (p_values[f] < 0.05)
+        and (not f.endswith("pred."))
+        and (not f.endswith("logit"))
+        and (f not in ["ID", "label", "time", "event"])
+        and (f in data.columns)
+    ]
+    if len(eligible_features) == 0:
+        raise ValueError("No eligible features to include in forward stepwise Cox regression.")
+
+    selected_features = []
+    remaining_features = eligible_features.copy()
+    cph = CoxPHFitter()
+    best_p = 1
+
+    # Step 1: Find the single most significant feature (lowest p in univariate)
+    first_feature = min(remaining_features, key=lambda f: p_values[f])
+    selected_features.append(first_feature)
+    remaining_features.remove(first_feature)
+
+    # Step 2: Add features one by one if they improve the model
+    while remaining_features:
+        best_feature = None
+        best_feature_p = 1
+        # Try adding each remaining feature and check if it is significant in multivariate
+        for feat in remaining_features:
+            test_features = selected_features + [feat]
+            try:
+                cph.fit(data[["time", "event"] + test_features], duration_col="time", event_col="event")
+                pval = cph.summary.loc[feat, "p"]
+                if pval < best_feature_p:
+                    best_feature_p = pval
+                    best_feature = feat
+            except Exception:
+                continue
+        if best_feature is not None and best_feature_p < threshold:
+            selected_features.append(best_feature)
+            remaining_features.remove(best_feature)
+        else:
+            break  # No more features improve the model significantly
+
+    # Final fit and plot
+    cph.fit(data[["time", "event"] + selected_features], duration_col="time", event_col="event")
+    summary = cph.summary.reset_index()
+    summary = summary[["covariate", 'coef', 'exp(coef)', 'exp(coef) lower 95%', 'exp(coef) upper 95%', "p"]]
+    summary.columns = ['Feature', 'Coefficient', 'Hazard Ratio', 'Lower CI', 'Upper CI', "p"]
+
+    fig = plt.figure(figsize=(12, 8))
+    fig = fp.forestplot(
+        summary,
+        estimate="Hazard Ratio",
+        ll="Lower CI",
+        hl="Upper CI",
+        pval="p",
+        ylabel="Confidence Interval",
+        xlabel="Hazard Ratio",
+        varlabel="Feature",
+        flush=False,
+        figsize=(12, 8),
+        **{'fontfamily': 'sans-serif', 'fontsize': 10}
+    )
+    plt.axvline(x=1, color='red', linestyle='--', label='HR = 1')
+    plt.tight_layout()
+    plt.savefig(plot_path, bbox_inches='tight')
+    plt.close()
+
+    return cph, selected_features, summary
+
+
+def stepwise_coxregression(
+    data,
+    p_values,
+    threshold=0.05,
+    min_features=1,
+    plot_path="stepwise_cox_forestplot.png"
+):
+    """
+    Backward stepwise Cox regression with features significant in univariate Cox (p<0.05),
+    except those ending with 'pred' or 'logit'.
+    Saves a forest plot and returns the model, selected features, and summary.
+    """
+    from lifelines import CoxPHFitter
+    import matplotlib.pyplot as plt
+    import forestplot as fp
+
+    # Use only univariately significant features, except model outputs
+    selected_features = [
+        f for f in p_values
+        if (p_values[f] < 0.05)
+        and (not f.endswith("pred."))
+        and (not f.endswith("logit"))
+        and (f not in ["ID", "label", "time", "event"])
+        and (f in data.columns)
+    ]
+    features = selected_features.copy()
+    if len(features) == 0:
+        raise ValueError("No features to include in multivariate stepwise Cox regression.")
+
+    cph = CoxPHFitter()
+    data_ = data[["time", "event"] + features].copy()
+
+    # Backward stepwise elimination
+    while len(features) > min_features:
+        cph.fit(data_[["time", "event"] + features], duration_col="time", event_col="event")
+        summary = cph.summary
+        # Remove feature with highest p-value if above threshold
+        pvals = summary["p"]
+        worst_p = pvals.max()
+        if worst_p < threshold:
+            break
+        worst_feature = pvals.idxmax()
+        features.remove(worst_feature)
+
+    # Final fit and plot
+    cph.fit(data_[["time", "event"] + features], duration_col="time", event_col="event")
+    summary = cph.summary.reset_index()
+    summary = summary[["covariate", 'coef', 'exp(coef)', 'exp(coef) lower 95%', 'exp(coef) upper 95%', "p"]]
+    summary.columns = ['Feature', 'Coefficient', 'Hazard Ratio', 'Lower CI', 'Upper CI', "p"]
+
+    fig = plt.figure(figsize=(12, 8))
+    fig = fp.forestplot(
+        summary,
+        estimate="Hazard Ratio",
+        ll="Lower CI",
+        hl="Upper CI",
+        pval="p",
+        ylabel="Confidence Interval",
+        xlabel="Hazard Ratio",
+        varlabel="Feature",
+        flush=False,
+        figsize=(12, 8),
+        **{'fontfamily': 'sans-serif', 'fontsize': 10}
+    )
+    plt.axvline(x=1, color='red', linestyle='--', label='HR = 1')
+    plt.tight_layout()
+    plt.savefig(plot_path, bbox_inches='tight')
+    plt.close()
+
+    return cph, features, summary
 
 
 def multivariate_coxregression(data, p_values):
     data = data.drop(columns=["ID", "label"])# + [x for x in data.columns if x.endswith("logit")])
-    columns = [x for x in p_values if ((p_values[x] < 0.05) and (not x.endswith("pred")) and (not x.endswith("logit")) )]
+    columns = [x for x in p_values if ((p_values[x] < 0.05) and (not x.endswith("pred.")) and (not x.endswith("logit")) )]
     data = data[["time", "event"] + columns]
     cph = CoxPHFitter()
     cph.fit(data, duration_col="time", event_col="event")
@@ -92,18 +326,40 @@ def multivariate_coxregression(data, p_values):
     summary = summary[["covariate", 'coef', 'exp(coef)', 'exp(coef) lower 95%', 'exp(coef) upper 95%', "p"]]
     summary.columns = ['Feature', 'Coefficient', 'Hazard Ratio', 'Lower CI', 'Upper CI', "p"]
 
-    #print(summary)
-    fig = plt.figure(figsize=(12, 8))  # Adjust figure size
-    fig = fp.forestplot(summary, estimate="Hazard Ratio", ll="Lower CI", hl="Upper CI", pval="p", ylabel="confidence interval", xlabel="Coefficient", varlabel="Feature",flush=False,figsize=(12,8), **{'fontfamily': 'sans-serif'} )
-    plt.axvline(x=1, color='red', linestyle='--', label='Vertical Line')
 
-    xmax = np.amax(summary["Upper CI"].values)
-    xmin = np.amin(summary["Lower CI"].values)
-    xlim = np.amax([np.abs((xmin-1)), np.abs((xmax-1))])
-
-    plt.tight_layout()
+    """fig = fp.forestplot(summary,  # the dataframe with results data
+                        estimate="Hazard Ratio",
+                        ll="Lower CI",
+                        hl="Upper CI",
+                        varlabel="Feature",
+                        flush=False,
+                        pval="p",
+                        ylabel="Confidence interval",  # y-label title
+                        xlabel="Hazard ratio",  # x-label title
+                        figsize=(12,8),
+                        fontsize=18,
+                        )
+    fig.set_ylabel("Confidence Interval", labelpad=-210, ha="left")
+    plt.axvline(x=1, color='red', linestyle='--', label='HR = 1')
+    plt.tight_layout()"""
+    """fig = make_forestplot(summary, estimate="Hazard Ratio",
+                        ll="Lower CI",
+                        hl="Upper CI",
+                        varlabel="Feature",
+                        pval="p",
+                        ylabel="Confidence interval",  # y-label title
+                        xlabel="Hazard ratio",  # x-label title
+                        labelpad=-155
+                        )"""
+    fig = simple_forestplot(summary, est_col="Hazard Ratio",
+                            ll_col="Lower CI",
+                            hl_col="Upper CI",
+                            feature_col="Feature",
+                            pval_col="p",
+                            xlabel="Hazard ratio",  # x-label title
+                            )
     
-    plt.savefig("multivariate_cox.png")
+    plt.savefig("multivariate_cox.png", bbox_inches="tight",)
 
 def univariate_coxregression(data, filename="univariatecox_features.png"):
     """
@@ -145,62 +401,63 @@ def univariate_coxregression(data, filename="univariatecox_features.png"):
             # Append the results to the list
             results.append([feature, summary['coef'], summary['exp(coef)'], summary['exp(coef) lower 95%'], summary['exp(coef) upper 95%'], summary['p']])
             p_values[feature] = summary["p"]
+    
+    
     # Create a summary DataFrame for all features
     summary_df = pd.DataFrame(results, columns=['Feature', 'Coefficient', 'Hazard Ratio', 'Lower CI', 'Upper CI', 'p-value'])
 
     # Print the summary
     #print(summary_df)
-    summary_features = summary_df[~summary_df["Feature"].str.endswith(("pred", "logit"), na=False)]
-    summary_models = summary_df[summary_df["Feature"].str.endswith("pred", na=False)]
+    summary_features = summary_df[~summary_df["Feature"].str.endswith(("pred.", "logit"), na=False)]
+    summary_models = summary_df[summary_df["Feature"].str.endswith("pred.", na=False)]
 
-
-    
     # Plot the forest plot
-    fig = plt.figure(figsize=(12, 8))
-    fig = fp.forestplot(
-        summary_features,
-        estimate="Hazard Ratio",
-        ll="Lower CI",
-        hl="Upper CI",
-        pval="p-value",
-        ylabel="Confidence Interval",
-        xlabel="Hazard Ratio",
-        varlabel="Feature",
-        flush=False,
-        figsize=(12, 8),
-        **{'fontfamily': 'sans-serif', 'fontsize': 10}
-    )
-    plt.axvline(x=1, color='red', linestyle='--', label='Vertical Line')
-    # Adjust layout and save the plot
-    plt.tight_layout()
+
+    fig = simple_forestplot(summary_features, est_col="Hazard Ratio",
+                        ll_col="Lower CI",
+                        hl_col="Upper CI",
+                        feature_col="Feature",
+                        pval_col="p-value",
+                        xlabel="Hazard ratio",  # x-label title
+                            )
+    
+    """fig = make_forestplot(summary_features, estimate="Hazard Ratio",
+                        ll="Lower CI",
+                        hl="Upper CI",
+                        varlabel="Feature",
+                        pval="p-value",
+                        ylabel="Confidence interval",  # y-label title
+                        xlabel="Hazard ratio",  # x-label title
+                        labelpad=-170
+                        )"""
+    
     plt.savefig("univariate_cox_features.png", bbox_inches='tight')
 
         # Plot the forest plot
-    fig = plt.figure(figsize=(12, 8))
-    fig = fp.forestplot(
-        summary_models,
-        estimate="Hazard Ratio",
-        ll="Lower CI",
-        hl="Upper CI",
-        pval="p-value",
-        ylabel="Confidence Interval",
-        xlabel="Hazard Ratio",
-        varlabel="Feature",
-        flush=False,
-        figsize=(12, 8),
-        **{'fontfamily': 'sans-serif', 'fontsize': 10}
-    )
-    plt.axvline(x=1, color='red', linestyle='--', label='Vertical Line')
-    # Adjust layout and save the plot
-    plt.tight_layout()
-    #plt.xlim(0.25,1.75)
+    """fig = make_forestplot(summary_models, estimate="Hazard Ratio",
+                        ll="Lower CI",
+                        hl="Upper CI",
+                        varlabel="Feature",
+                        pval="p-value",
+                        ylabel="Confidence interval",  # y-label title
+                        xlabel="Hazard ratio",  # x-label title
+                        labelpad=-350
+                        )"""
+    fig = simple_forestplot(summary_models, est_col="Hazard Ratio",
+                        ll_col="Lower CI",
+                        hl_col="Upper CI",
+                        feature_col="Feature",
+                        pval_col="p-value",
+                        xlabel="Hazard ratio",  # x-label title
+                            )
+
     plt.savefig("univariate_cox_models.png", bbox_inches='tight')
     
     
     return p_values
 
 def plot_kaplan_meier_subplots(
-    data, time_col, event_col, feature_cols, fig_title, plot_names, ncols=3, out_path=None
+    data, time_col, event_col, feature_cols, fig_title, plot_names, ncols=3, out_path=None, group_labels_dict=None
 ):
     import math
     n_plots = len(feature_cols)
@@ -211,6 +468,7 @@ def plot_kaplan_meier_subplots(
     for idx, (feature_col, plot_name) in enumerate(zip(feature_cols, plot_names)):
         ax = axes[idx]
         kmf = KaplanMeierFitter()
+        """
         for value in [0, 1]:
             subset = data[data[feature_col] == value]
             if len(subset) == 0:
@@ -219,22 +477,35 @@ def plot_kaplan_meier_subplots(
                     label="High" if value == 1 else "Low")
 
             kmf.plot_survival_function(ci_show=True, ax=ax)
+        """
+        for value in [0, 1]:
+            subset = data[data[feature_col] == value]
+            if len(subset) == 0:
+                continue
+            # Use custom group labels if provided
+            if group_labels_dict and feature_col in group_labels_dict:
+                group_label = group_labels_dict[feature_col][value]
+            else:
+                group_label = "High" if value == 1 else "Low"
+            kmf.fit(subset[time_col], event_observed=subset[event_col],
+                    label=group_label)
+            kmf.plot_survival_function(ci_show=True, ax=ax)
         fraction_positive = data[feature_col].mean()
         fraction_text = f"Frac. high: {fraction_positive:.2f}"
         ax.text(0.5, 0.1, fraction_text, transform=ax.transAxes, fontsize=10,
                 bbox=dict(facecolor='white', alpha=0.5))
         ax.set_title(plot_name)
-        ax.set_xlabel("Time")
+        ax.set_xlabel("Overall survival time (Years)")
         ax.set_ylabel("Survival probability")
         ax.grid(True)
         ax.set_ylim(0, 1)
-        ax.set_xlim(0, 1825)
+        ax.set_xlim(0, 5)
         ax.legend()
     
     # Hide any unused axes
     for j in range(idx + 1, len(axes)):
         axes[j].axis('off')
-    plt.suptitle(fig_title)
+    #plt.suptitle(fig_title)
     plt.tight_layout(rect=[0, 0, 1, 0.97])
     plt.subplots_adjust(hspace=0.4)
     if out_path:
@@ -249,7 +520,7 @@ def plot_model_kaplan_meier(data, time_col, event_col, model_pred_cols, fig_titl
     nrows = math.ceil(n_plots / ncols)
     fig, axes = plt.subplots(nrows, ncols, figsize=(5 * ncols, 4 * nrows), squeeze=False)
     axes = axes.flatten()
-
+    print(model_pred_cols)
     for idx, col in enumerate(model_pred_cols):
         ax = axes[idx]
         # Use pre-computed dichotomized column if available, otherwise dichotomize at 0.5 or median
@@ -272,17 +543,17 @@ def plot_model_kaplan_meier(data, time_col, event_col, model_pred_cols, fig_titl
         ax.text(0.5, 0.1, fraction_text, transform=ax.transAxes, fontsize=10,
                 bbox=dict(facecolor='white', alpha=0.5))
         ax.set_title(col)
-        ax.set_xlabel("Time")
+        ax.set_xlabel("Overall survival time (Years)")
         ax.set_ylabel("Survival probability")
         ax.grid(True)
         ax.set_ylim(0, 1)
-        ax.set_xlim(0, 1825)
+        ax.set_xlim(0, 5)
         ax.legend()
         
         
     for j in range(idx + 1, len(axes)):
         axes[j].axis('off')
-    plt.suptitle(fig_title)
+    #plt.suptitle(fig_title)
     plt.tight_layout(rect=[0, 0, 1, 0.97])
     plt.subplots_adjust(hspace=0.4)
     if out_path:
@@ -369,6 +640,7 @@ def get_patient_preds():
         all_model_preds.append(patient_preds)
 
     all_model_preds = reduce(lambda left, right: pd.merge(left, right, on='ID'), all_model_preds)
+
         
     return names, all_model_preds
 
@@ -407,16 +679,18 @@ def get_patient_pred():
         pred_logits = pd.read_csv(os.path.join("./preds/", experiment_name + "preds_logits.csv"))
         all_model_preds.append(preds_logits)
                                   
-
+print("get patient predictions")
 experiment_names, all_models_preds = get_patient_preds()#get_extended_preds()##
 
         
 patient_data = pd.read_csv("patient_densities_morphologies.csv")
+patient_data.rename(columns={"Gender": "Sex (Male)"}, inplace=True)
 patient_data['ID'] = patient_data['ID'].astype(float)
-#print(all_models_preds)
+print(all_models_preds)
 all_models_preds['ID'] = all_models_preds['ID'].astype(float)
 
 patient_data = dichotomize_clinpars(patient_data)
+
 patient_data = cencor_after5years(patient_data)
 
 patient_data_model_preds = pd.merge(patient_data, all_models_preds, on="ID")
@@ -425,10 +699,16 @@ patient_data_model_preds = pd.merge(patient_data, all_models_preds, on="ID")
 
 patient_data = patient_data_model_preds
 
+model_pred_cols = [col for col in patient_data.columns if col.endswith('pred')]
+# Rename columns: underscores to "+"
+for col in model_pred_cols:
+    new_col = col.replace("_", "+")
+    new_col = new_col +  "."
+    if new_col != col:
+        patient_data.rename(columns={col: new_col}, inplace=True)
 
 
-
-clinical_features = ['Age', 'Performance status', 'Stage', 'Gender', 'Smoking', 'LUAD']  # Edit to match your columns
+clinical_features = ['Age', 'Performance status', 'Stage', 'Sex (Male)', 'Smoking', 'LUAD']  # Edit to match your columns
 
 density_features = [
     "Stroma CD4_Single",
@@ -443,31 +723,67 @@ density_features = [
     "Tumor B_cells"
 ]
 
+density_rename_map = {}
+for col in density_features:
+    new_col = (
+        col.replace("_", " ")
+           .replace("Single", "eff.")
+           #.replace("Treg", "T-reg")
+    )
+    density_rename_map[col] = new_col
+    if col in patient_data.columns:
+        patient_data.rename(columns={col: new_col}, inplace=True)
+
+# Now update your list to reflect new column names
+density_features = [density_rename_map[col] for col in density_features]
+
+
 morphology_features = ['Nucleus Area', 'Nucleus Compactness', 'Nucleus Axis Ratio']  # Replace with actual names
 
-# For models, assuming your prediction columns are named as e.g. 'clinical parameters pred', 'densities pred', etc.
-model_pred_cols = [
-    col for col in patient_data.columns if col.endswith('pred')
-]
 
+
+
+clinical_titles = ["Age", "Performance status", "Stage", "Sex (Male)", "Smoking", "LUAD"]
+density_titles = density_features  # or custom short names
+morph_titles = ["Nucleus area", "Nucleus compactness", "Nucleus axis ratio"]
+
+
+
+# For models, assuming your prediction columns are named as e.g. 'clinical parameters pred', 'densities pred', etc.
+model_pred_cols = [col for col in patient_data.columns if col.endswith('pred.')]
+model_logit_cols = [col for col in patient_data.columns if col.endswith('logit')]
+
+
+patient_data[model_pred_cols] = patient_data[model_pred_cols].map(lambda x: 1 if x >= 0.5 else 0)
+#patient_data[model_logit_cols] = patient_data[model_logit_cols].map(lambda x: 1 if x >= 0.5 else 0) 
 
 
 #print(patient_data["densities pred"].values)
 cutoffs = get_all_best_cutoffs(patient_data, experiment_names)
-for feature in cutoffs:
+for feature in tqdm(cutoffs):
     cutoff = cutoffs[feature]
     patient_data[feature] = (patient_data[feature] > cutoff).astype(int)
 #print(patient_data["densities pred"].values)
 
 
+
+
 #print("accuracy:", accuracy_score(patient_data_model_preds["label"], patient_data_model_preds["morphologies pred"]))
-print("accuracy:", roc_auc_score(patient_data_model_preds["label"], patient_data_model_preds["clinical parameters pred"]))
+print("accuracy:", roc_auc_score(patient_data_model_preds["label"], patient_data_model_preds["clinical parameters pred."]))
 print(patient_data_model_preds.columns.values)
 p_values = univariate_coxregression(patient_data)
 multivariate_coxregression(patient_data, p_values)
+cph, features, summary = stepwise_coxregression(patient_data, p_values)
+cph, features, summary = forward_stepwise_coxregression(patient_data, p_values)
 
-
-
+clinical_group_labels = {
+    "Age":           {0: "<70",         1: "70+"},
+    "Stage":         {0: "Stage I",     1: "Stage II–IV"},
+    "Performance status": {0: "0",      1: "1–2"},
+    "Sex (Male)":    {0: "Female",      1: "Male"},
+    "Smoking":       {0: "Never",       1: "Ever"},
+    "LUAD":          {0: "Other/SqCC",  1: "LUAD"},
+}
 
 """for feature in cutoffs:
     plot_kaplan_meier(patient_data, "time", "event", feature, feature + ".png")
@@ -479,16 +795,15 @@ for feature in ['LUAD', 'Age', 'Gender', 'Smoking', 'Stage', 'Performance status
 #    plot_kaplan_meier(patient_data, "time", "event", name + " pred", name + ".png")
 
 # Group names for plot titles (shorter is better in subplot titles)
-clinical_titles = ["Age", "Performance status", "Stage", "Gender", "Smoking", "LUAD"]
-density_titles = density_features  # or custom short names
-morph_titles = ["Nucleus area", "Nucleus compactness", "Nucleus axis ratio"]
 
 print("Columns in patient_data:")
 print(patient_data.columns.tolist())
 
+
+patient_data["time"] = patient_data["time"]/365 # days to years
 plot_kaplan_meier_subplots(
     patient_data, "time", "event", clinical_features, "Kaplan-Meier: Clinical Parameters",
-    clinical_titles, ncols=3, out_path="km_clinical.png"
+    clinical_titles, ncols=3, out_path="km_clinical.png", group_labels_dict=clinical_group_labels
 )
 
 plot_kaplan_meier_subplots(
@@ -501,7 +816,16 @@ plot_kaplan_meier_subplots(
     morph_titles, ncols=3, out_path="km_morphologies.png"
 )
 
+model_pred_cols = ['clinical parameters pred.', 'densities pred.', 'morphologies pred.', 'clinical parameters+densities pred.', 'clinical parameters+morphologies pred.', 'morphologies+densities pred.', 'clinical parameters+morphologies+densities pred.']
+
 plot_model_kaplan_meier(
     patient_data, "time", "event", model_pred_cols, "Kaplan-Meier: Model Predictions",
     out_path="km_models.png"
+)
+
+main_model_pred_cols = ['clinical parameters pred.', 'densities pred.', 'clinical parameters+densities pred.']
+
+plot_model_kaplan_meier(
+    patient_data, "time", "event", main_model_pred_cols, "Kaplan-Meier: Model Predictions",
+    out_path="km_main_models.png"
 )

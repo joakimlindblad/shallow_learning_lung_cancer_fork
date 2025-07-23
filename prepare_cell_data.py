@@ -276,7 +276,7 @@ def get_density_morphology_data(data, patient_data, samples_data):
         sample = samples_data[samples_data["ID"] == ID]
         patient = patient_data[patient_data["ID"]==ID]
         t = patient["Follow-up (days)"].values[0]
-        event = 1 if patient["censored"].values[0] else 0
+        event = 0 if patient["censored"].values[0] else 1
         label = patient["label"].values[0]
         luad = patient["LUAD"].values[0]
         #lusc = patient["LUSC"].values[0]
@@ -328,7 +328,7 @@ def get_density_morphology_data(data, patient_data, samples_data):
         
         
         #ck_cells = patient_cells[patient_cells["CK_Single"] == 1]
-        ck_cells = patient_cells[patient_cells["Cancer"] == 1]
+        ck_cells = patient_cells[patient_cells["CK"] == 1]
         for nuclei_feature in nuclei_names:
             statistics[nuclei_feature].append(ck_cells[nuclei_feature].std()/ck_cells[nuclei_feature].mean())
         """if len(ck_cells) <= 1:
@@ -369,13 +369,13 @@ def get_density_morphology_data(data, patient_data, samples_data):
     #statistics[nuclei_names] = impute_missing_values(statistics[nuclei_names])
     return statistics
 
-cells_path = "to_start_with/BOMI2_all_cells_TIL.csv"
+cells_path = "/data2/love/multiplex_cancer_cohorts/cell_data/Lung_cell_data_raw/BOMI2_all_cells_TIL.csv"#"to_start_with/BOMI2_all_cells_TIL.csv"
 
-samples_path = "../multiplex_dataset/lung_cancer_BOMI2_dataset/samples.csv"#"to_start_with/Lung_TIL_samples.csv"
-patients_path = "../multiplex_dataset/lung_cancer_BOMI2_dataset/binary_survival_prediction/Clinical_data_with_labels.csv"#"../lung_cancer_dataset/raw_data/Clinical_data_max_20190329.csv"#"to_start_with/Clinical_data.xlsx"#"to_start_with/BOMI2.xlsx"
-densities_path = "patient_cell_density_data_2024.csv"
-morphologies_path = "patient_cell_statistics_morphology.csv"
-idalign_path = "id_align.csv"
+samples_path = "/data2/love/multiplex_cancer_cohorts/patient_and_samples_data/lung_cancer_BOMI2_dataset/samples.csv"#"../multiplex_dataset/lung_cancer_BOMI2_dataset/samples.csv"#"to_start_with/Lung_TIL_samples.csv"
+patients_path = "/data2/love/multiplex_cancer_cohorts/patient_and_samples_data/lung_cancer_BOMI2_dataset/binary_survival_prediction/Clinical_data_with_labels.csv"#"../multiplex_dataset/lung_cancer_BOMI2_dataset/binary_survival_prediction/Clinical_data_with_labels.csv"#"../lung_cancer_dataset/raw_data/Clinical_data_max_20190329.csv"#"to_start_with/Clinical_data.xlsx"#"to_start_with/BOMI2.xlsx"
+#densities_path = "patient_cell_density_data_2024.csv"
+#morphologies_path = "patient_cell_statistics_morphology.csv"
+#idalign_path = "id_align.csv"
 
 print("loading data")
 
@@ -389,7 +389,7 @@ patient_data = pd.read_csv(patients_path)
 print("preprocessing data")
 
 cells_data = preprocess_cells(cells_data)
-
+print(cells_data)
 patient_data = preprocess_patients(patient_data)
 
 
@@ -406,7 +406,7 @@ patient_cells_data.to_csv("patient_densities_morphologies.csv", index=False)
 
 
 
-test_ids = pd.read_csv("../multiplex_dataset/lung_cancer_BOMI2_dataset/binary_subtype_prediction_ACvsSqCC/static_split/test.csv")["ID"].values
+#test_ids = pd.read_csv("../multiplex_dataset/lung_cancer_BOMI2_dataset/binary_subtype_prediction_ACvsSqCC/static_split/test.csv")["ID"].values
 #plot_cells(cells_data, samples_data, patient_data, test_ids)
 
 
