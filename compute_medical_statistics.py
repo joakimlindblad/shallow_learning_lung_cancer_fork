@@ -160,7 +160,7 @@ def forward_stepwise_coxregression(
     data,
     p_values,
     threshold=0.05,
-    plot_path="forward_stepwise_cox_forestplot.png"
+    plot_path="forward_stepwise_cox_forestplot.svg"
 ):
     """
     Forward stepwise Cox regression with features significant in univariate Cox (p<0.05),
@@ -359,9 +359,9 @@ def multivariate_coxregression(data, p_values):
                             xlabel="Hazard ratio",  # x-label title
                             )
     
-    plt.savefig("multivariate_cox.png", bbox_inches="tight",)
+    plt.savefig("multivariate_cox.svg", bbox_inches="tight",)
 
-def univariate_coxregression(data, filename="univariatecox_features.png"):
+def univariate_coxregression(data, filename="univariatecox_features.svg"):
     """
     Perform univariate Cox regression for each feature independently.
 
@@ -431,7 +431,7 @@ def univariate_coxregression(data, filename="univariatecox_features.png"):
                         labelpad=-170
                         )"""
     
-    plt.savefig("univariate_cox_features.png", bbox_inches='tight')
+    plt.savefig("univariate_cox_features.svg", bbox_inches='tight')
 
         # Plot the forest plot
     """fig = make_forestplot(summary_models, estimate="Hazard Ratio",
@@ -451,7 +451,7 @@ def univariate_coxregression(data, filename="univariatecox_features.png"):
                         xlabel="Hazard ratio",  # x-label title
                             )
 
-    plt.savefig("univariate_cox_models.png", bbox_inches='tight')
+    plt.savefig("univariate_cox_models.svg", bbox_inches='tight')
     
     
     return p_values
@@ -803,29 +803,29 @@ print(patient_data.columns.tolist())
 patient_data["time"] = patient_data["time"]/365 # days to years
 plot_kaplan_meier_subplots(
     patient_data, "time", "event", clinical_features, "Kaplan-Meier: Clinical Parameters",
-    clinical_titles, ncols=3, out_path="km_clinical.png", group_labels_dict=clinical_group_labels
+    clinical_titles, ncols=3, out_path="km_clinical.svg", group_labels_dict=clinical_group_labels
 )
 
 plot_kaplan_meier_subplots(
     patient_data, "time", "event", density_features, "Kaplan-Meier: Cell Densities",
-    density_titles, ncols=3, out_path="km_densities.png"
+    density_titles, ncols=3, out_path="km_densities.svg"
 )
 
 plot_kaplan_meier_subplots(
     patient_data, "time", "event", morphology_features, "Kaplan-Meier: Morphologies",
-    morph_titles, ncols=3, out_path="km_morphologies.png"
+    morph_titles, ncols=3, out_path="km_morphologies.svg"
 )
 
 model_pred_cols = ['clinical parameters pred.', 'densities pred.', 'morphologies pred.', 'clinical parameters+densities pred.', 'clinical parameters+morphologies pred.', 'morphologies+densities pred.', 'clinical parameters+morphologies+densities pred.']
 
 plot_model_kaplan_meier(
     patient_data, "time", "event", model_pred_cols, "Kaplan-Meier: Model Predictions",
-    out_path="km_models.png"
+    out_path="km_models.svg"
 )
 
 main_model_pred_cols = ['clinical parameters pred.', 'densities pred.', 'clinical parameters+densities pred.']
 
 plot_model_kaplan_meier(
     patient_data, "time", "event", main_model_pred_cols, "Kaplan-Meier: Model Predictions",
-    out_path="km_main_models.png"
+    out_path="km_main_models.svg"
 )

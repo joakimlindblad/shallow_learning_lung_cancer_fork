@@ -156,7 +156,7 @@ plot_grid(
     {exp: weight_data[exp] for exp in exps},
     xlim=(-0.45, 0.45),
     title='Logistic Regression Feature Weights',
-    out_file='feature_weights_grid.png'
+    out_file='feature_weights_grid.svg'
 )
 
 # Grid of permutation importances for all experiments (ordered, full titles)
@@ -164,7 +164,7 @@ plot_grid(
     {exp: perm_data[exp] for exp in exps},
     xlim=(-0.01, 0.065),
     title='Logistic Regression Permutation Importances',
-    out_file='perm_importances_grid.png'
+    out_file='perm_importances_grid.svg'
 )
 
 # Standalone plots for Clinical Parameters + Densities + Morphologies
@@ -175,7 +175,7 @@ if combo_exp in weight_data:
         weight_data[combo_exp][1],
         xlim=(-0.45, 0.45),
         title='Clinical Parameters + Densities + Morphologies',
-        out_file='feature_weights_clinical_parameters_densities_morphologies.png'
+        out_file='feature_weights_clinical_parameters_densities_morphologies.svg'
     )
 if combo_exp in perm_data:
     plot_single(
@@ -183,7 +183,7 @@ if combo_exp in perm_data:
         perm_data[combo_exp][1],
         xlim=(-0.01, 0.065),
         title='Clinical Parameters + Densities + Morphologies',
-        out_file='perm_importances_clinical_parameters_densities_morphologies.png'
+        out_file='perm_importances_clinical_parameters_densities_morphologies.svg'
     )
 
 
@@ -193,5 +193,5 @@ if combo_exp in weight_data and combo_exp in perm_data:
         weight_data[combo_exp][0], weight_data[combo_exp][1], (-0.45, 0.45), "Model feature weights",
         perm_data[combo_exp][0], perm_data[combo_exp][1], (-0.01, 0.065), "Permutation feature importances",
         suptitle="Clinical Parameters + Densities + Morphologies",
-        out_file="weights_perm_importance_combined.png"
+        out_file="weights_perm_importance_combined.svg"
     )
