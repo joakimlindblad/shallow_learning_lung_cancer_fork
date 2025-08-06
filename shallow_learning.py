@@ -16,8 +16,20 @@ from scipy.stats import ttest_rel
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import PolynomialFeatures
+#from sklearn.decomposition import PCA
+#from sklearn.preprocessing import PowerTransformer
+#from sklearn.preprocessing import RobustScaler
+#from sklearn.preprocessing import FunctionTransformer
+
+#import warnings 
+#warnings.filterwarnings("ignore")
+
 # Toggle permutation importances
 PERMUTE_FEATURES = True
+
+BOMI2_dataset_path="../lung_cancer_BOMI2_dataset/"
 
 def get_feature_importance(model, columns):
     if hasattr(model, 'coef_'):
@@ -48,28 +60,57 @@ class RandomClassifier:
 
 def init_rf():
     param_grid = {
-        'n_estimators': [100],
-        'max_depth': [3, 5, 7],
+        'n_estimators': [200],
+        'max_depth': [3, 5],
         'min_samples_split': [2],
         'min_samples_leaf': [1],
-        'max_features': ['sqrt']
+        'max_features': ['sqrt'],
+        'max_samples' : [0.3,0.5,0.7]
     }
     rf = RandomForestClassifier(random_state=42, n_jobs=-1)
     return GridSearchCV(rf, param_grid, cv=5, scoring='roc_auc', n_jobs=-1)
 
+# Create a pipeline with polynomial features, scaling, and Logistic Regression
+model_LR = Pipeline([
+    ('poly', PolynomialFeatures(degree=2, include_bias=False)), #Bias included in the LR anyhow
+    #('poly', FunctionTransformer(lambda x: np.power(x, np.arange(2)))),
+    #('poly', FunctionTransformer(lambda X: np.hstack((X, X**2)))),
+    ('scaler', StandardScaler()),
+#    ('scaler', RobustScaler()),
+    ('lr', LogisticRegression())
+])
+
+# model_LR = Pipeline([
+#     ("pca", PCA()),
+#     ('lr', LogisticRegression())
+# ])
+
+# model_LR = Pipeline([
+# #    ("pt",PowerTransformer()),
+#     ('lr', LogisticRegression())
+# ])
+
 def init_logreg():
     param_grid = {
-        'C': np.logspace(-4, 4, 10),#[0.1, 1, 10],#(-4, 4, 10),  # Try a wide range of regularization strengths
-        'penalty': ['l1', 'l2'],      # Test both L1 and L2 regularization
-        'solver': ['liblinear', 'saga'],  # Solvers that support L1 and L2 penalties
-        'max_iter': [10000]   # Ensure enough iterations for convergence
+      #  'poly__interaction_only': [False],
+        'lr__C': np.logspace(-1, 4, 14),#[0.1, 1, 10],#(-4, 4, 10),  # Try a wide range of regularization strengths
+        'lr__penalty': ['l1', 'l2'],      # Test both L1 and L2 regularization
+        'lr__solver': ['liblinear'],  # Solvers that support L1 and L2 penalties
+        'lr__tol': [1e-6],
+        #'fit_intercept': [True, False],
+        #'solver': ['saga'],  # Solvers that support L1 and L2 penalties
+        #'l1_ratio': [0.1,0.5,0.9], , 'elasticnet'
+        'lr__max_iter': [10000]   # Ensure enough iterations for convergence
     }
-    log_reg = LogisticRegression(random_state=42)
+    #log_reg = LogisticRegression(random_state=42)
+    log_reg = model_LR
     return GridSearchCV(log_reg, param_grid, cv=5, scoring='roc_auc', n_jobs=-1)
+
+
 
 def init_svm():
     param_grid = {
-        'C': [0.1, 1, 10],
+        'C': [0.1, 1, 10, 20],
         'kernel': ['linear', 'rbf'],
         'gamma': ['scale', 'auto'],
     }
@@ -82,11 +123,11 @@ def init_knn():
     return GridSearchCV(knn, param_grid, cv=5, scoring='roc_auc', n_jobs=-1)
 
 model_registry = {
-    "RF": init_rf,
+#    "RF": init_rf,
     "LogReg": init_logreg,
-    "SVM": init_svm,
+#    "SVM": init_svm,
     "KNN": init_knn,
-    #"Random": lambda: RandomClassifier()
+#    "Random": lambda: RandomClassifier()
 }
 
 # ---- Main ----
@@ -101,17 +142,22 @@ morphologies = column_names[6:9]
 densities = column_names[9:]
 part_names = {"clinical parameters": clinical_parameters, "morphologies": morphologies, "densities": densities}
 
+# name_combination_list = [
+#     ["clinical parameters","morphologies","densities"],
+#     ["clinical parameters","morphologies"],
+#     ["clinical parameters","densities"],
+#     ["morphologies","densities"],
+#     ["clinical parameters"],
+#     ["morphologies"],
+#     ["densities"]
+# ]
+
 name_combination_list = [
-    ["clinical parameters","morphologies","densities"],
-    ["clinical parameters","morphologies"],
-    ["clinical parameters","densities"],
-    ["morphologies","densities"],
-    ["clinical parameters"],
-    ["morphologies"],
-    ["densities"]
+#    ["clinical parameters"],
+    ["morphologies"]
 ]
 
-split_folder = "/data2/love/multiplex_cancer_cohorts/patient_and_samples_data/lung_cancer_BOMI2_dataset/binary_survival_prediction/100foldcrossvalrepeat/"
+split_folder = BOMI2_dataset_path+"binary_survival_prediction/100foldcrossvalrepeat/"
 num_splits = len([x for x in os.listdir(split_folder) if "test" in x])
 
 os.makedirs("plots", exist_ok=True)
@@ -157,6 +203,7 @@ for name_comb in name_combination_list:
             X_train, X_test = X_experiment[train_mask], X_experiment[test_mask]
             y_train, y_test = y[train_mask], y[test_mask]
             scaler = StandardScaler()
+            #scaler = RobustScaler()
             X_train_scaled = scaler.fit_transform(X_train)
             X_test_scaled = scaler.transform(X_test)
             model = model_fn()
@@ -175,6 +222,13 @@ for name_comb in name_combination_list:
                 probas = best_model.predict_proba(X_test_scaled)[:, 1]
                 preds_train = best_model.predict(X_train_scaled)
                 probas_train = best_model.predict_proba(X_train_scaled)[:, 1]
+                # To see which hyperparameters were selected
+                print(model.best_params_)
+                if hasattr(best_model, "n_iter_"):
+                    print("n_iter: ",best_model.n_iter_)
+                elif hasattr(best_model, "steps"):
+                    if hasattr(best_model[-1], "n_iter_"):
+                        print("n_iter: ",best_model[-1].n_iter_)
 
             # Metrics
             acc = accuracy_score(y_test["label"], preds)
