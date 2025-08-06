@@ -72,7 +72,7 @@ def init_rf():
 
 def init_logreg():
     param_grid = {
-        'C': np.logspace(-1, 4, 14),  # Try a wide range of regularization strengths
+        'C': np.round(np.logspace(-1, 4, 14),decimals=4).tolist(),  # Try a wide range of regularization strengths
         'penalty': ['l1', 'l2'],      # Test both L1 and L2 regularization
         'solver': ['liblinear'],  # Solvers that support L1 and L2 penalties
         'tol': [1e-6],
@@ -92,7 +92,7 @@ logreg_pipe = Pipeline([
 def init_logreg_poly():
     param_grid = {
         #  'poly__interaction_only': [False],   # Worse performance
-        'lr__C': np.logspace(-1, 4, 14),  # Try a wide range of regularization strengths
+        'lr__C': np.logspace(-1, 4, 14).tolist(),  # Try a wide range of regularization strengths
         'lr__penalty': ['l1', 'l2'],      # Test both L1 and L2 regularization
         'lr__solver': ['liblinear'],  # Solvers that support L1 and L2 penalties
         'lr__tol': [1e-6],
@@ -116,7 +116,7 @@ def init_knn():
 
 model_registry = {
 #    "RF": init_rf,
-#    "LogReg": init_logreg,
+    "LogReg": init_logreg,
 #    "LogRegPoly": init_logreg_poly,
 #    "SVM": init_svm,
     "KNN": init_knn,
@@ -189,9 +189,13 @@ for name_comb in name_combination_list:
         preds_logits = []
 
         param_grid = model_fn().param_grid
-        param_count = {key: [0] * len(value) for key,value in param_grid.items()}
+        for key in param_grid:
+            param_grid[key]=dict.fromkeys(param_grid[key], 0)
 
-        for split in tqdm(range(num_splits), desc=f"{experiment_name}-{model_name}", leave=False):
+        print(f"{experiment_name}-{model_name}:")
+        sum_iter=None
+        pbar=tqdm(range(num_splits), desc=f"{experiment_name}-{model_name}", leave=False)
+        for split in pbar:
             train_ids = pd.read_csv(os.path.join(split_folder, f"split_{split}_train_val.csv"))["ID"]
             test_ids = pd.read_csv(os.path.join(split_folder, f"split_{split}_test.csv"))["ID"]
             train_mask = df["ID"].isin(train_ids)
@@ -220,22 +224,18 @@ for name_comb in name_combination_list:
                 probas_train = best_model.predict_proba(X_train_scaled)[:, 1]
                 
                 # To see which hyperparameters were selected
-                print(model.best_params_)
+                #print(model.best_params_)
                 param_pick = model.best_params_
                 for key in param_grid:
-                    try:
-                        index = param_grid[key].index(param_pick[key])
-                        param_count[key][index]+=1
-                    except ValueError:
-                        print("Element not found.")
-                print(param_count)
+                    param_grid[key][param_pick[key]]+=1
+                #print(param_grid)
 
                 # Print n_iter if available
-                if hasattr(best_model, "n_iter_"):
-                    print("n_iter: ",best_model.n_iter_)
-                elif hasattr(best_model, "steps"):
-                    if hasattr(best_model[-1], "n_iter_"):
-                        print("n_iter: ",best_model[-1].n_iter_)
+                bm = best_model[-1] if hasattr(best_model, "steps") else best_model 
+                if hasattr(bm, "n_iter_"):
+                    n_iter=bm.n_iter_[0]
+                    pbar.set_postfix({"n_iter":n_iter})
+                    sum_iter = sum_iter+n_iter if sum_iter is not None else n_iter
 
             # Metrics
             acc = accuracy_score(y_test["label"], preds)
@@ -277,6 +277,10 @@ for name_comb in name_combination_list:
                 if PERMUTE_FEATURES:
                     pi = permutation_importance(best_model, X_test_scaled, y_test["label"], n_repeats=10, random_state=42, n_jobs=-1)
                     permutation_importances.append(pi.importances_mean)
+
+        if sum_iter is not None:
+            print(f"Avg. n_iter: {sum_iter/num_splits}")
+        print(param_grid)
 
         # Aggregate results for results_dict
         results_dict["Experiment"].append(experiment_name)
