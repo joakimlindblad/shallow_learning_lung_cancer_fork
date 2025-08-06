@@ -70,43 +70,35 @@ def init_rf():
     rf = RandomForestClassifier(random_state=42, n_jobs=-1)
     return GridSearchCV(rf, param_grid, cv=5, scoring='roc_auc', n_jobs=-1)
 
-# Create a pipeline with polynomial features, scaling, and Logistic Regression
-model_LR = Pipeline([
-    ('poly', PolynomialFeatures(degree=2, include_bias=False)), #Bias included in the LR anyhow
-    #('poly', FunctionTransformer(lambda x: np.power(x, np.arange(2)))),
-    #('poly', FunctionTransformer(lambda X: np.hstack((X, X**2)))),
-    ('scaler', StandardScaler()),
-#    ('scaler', RobustScaler()),
-    ('lr', LogisticRegression())
-])
-
-# model_LR = Pipeline([
-#     ("pca", PCA()),
-#     ('lr', LogisticRegression())
-# ])
-
-# model_LR = Pipeline([
-# #    ("pt",PowerTransformer()),
-#     ('lr', LogisticRegression())
-# ])
-
 def init_logreg():
     param_grid = {
-      #  'poly__interaction_only': [False],
-        'lr__C': np.logspace(-1, 4, 14),#[0.1, 1, 10],#(-4, 4, 10),  # Try a wide range of regularization strengths
+        'C': np.logspace(-1, 4, 14),  # Try a wide range of regularization strengths
+        'penalty': ['l1', 'l2'],      # Test both L1 and L2 regularization
+        'solver': ['liblinear'],  # Solvers that support L1 and L2 penalties
+        'tol': [1e-6],
+        'max_iter': [10000]   # Ensure enough iterations for convergence
+    }
+    log_reg = LogisticRegression(random_state=42)
+    return GridSearchCV(log_reg, param_grid, cv=5, scoring='roc_auc', n_jobs=-1)
+
+# Create a pipeline with polynomial features, scaling, and Logistic Regression
+logreg_pipe = Pipeline([
+    ('poly', PolynomialFeatures(degree=2, include_bias=False)), #Bias included in the LR anyhow
+    #('poly', FunctionTransformer(lambda X: np.hstack((X, X**2)))), #No cross-terms, works worse
+    ('scaler', StandardScaler()), 
+    ('lr', LogisticRegression(random_state=42))
+])
+
+def init_logreg_poly():
+    param_grid = {
+        #  'poly__interaction_only': [False],   # Worse performance
+        'lr__C': np.logspace(-1, 4, 14),  # Try a wide range of regularization strengths
         'lr__penalty': ['l1', 'l2'],      # Test both L1 and L2 regularization
         'lr__solver': ['liblinear'],  # Solvers that support L1 and L2 penalties
         'lr__tol': [1e-6],
-        #'fit_intercept': [True, False],
-        #'solver': ['saga'],  # Solvers that support L1 and L2 penalties
-        #'l1_ratio': [0.1,0.5,0.9], , 'elasticnet'
         'lr__max_iter': [10000]   # Ensure enough iterations for convergence
     }
-    #log_reg = LogisticRegression(random_state=42)
-    log_reg = model_LR
-    return GridSearchCV(log_reg, param_grid, cv=5, scoring='roc_auc', n_jobs=-1)
-
-
+    return GridSearchCV(logreg_pipe, param_grid, cv=5, scoring='roc_auc', n_jobs=-1)
 
 def init_svm():
     param_grid = {
@@ -118,13 +110,14 @@ def init_svm():
     return GridSearchCV(svm, param_grid, cv=5, scoring='roc_auc', n_jobs=-1)
 
 def init_knn():
-    param_grid = {'n_neighbors': [5, 10, 20]}
+    param_grid = {'n_neighbors': [3, 5, 9, 21]}
     knn = KNeighborsClassifier()
     return GridSearchCV(knn, param_grid, cv=5, scoring='roc_auc', n_jobs=-1)
 
 model_registry = {
 #    "RF": init_rf,
-    "LogReg": init_logreg,
+#    "LogReg": init_logreg,
+#    "LogRegPoly": init_logreg_poly,
 #    "SVM": init_svm,
     "KNN": init_knn,
 #    "Random": lambda: RandomClassifier()
@@ -195,6 +188,9 @@ for name_comb in name_combination_list:
         logits_by_id = {ID: [] for ID in df["ID"]}
         preds_logits = []
 
+        param_grid = model_fn().param_grid
+        param_count = {key: [0] * len(value) for key,value in param_grid.items()}
+
         for split in tqdm(range(num_splits), desc=f"{experiment_name}-{model_name}", leave=False):
             train_ids = pd.read_csv(os.path.join(split_folder, f"split_{split}_train_val.csv"))["ID"]
             test_ids = pd.read_csv(os.path.join(split_folder, f"split_{split}_test.csv"))["ID"]
@@ -222,8 +218,19 @@ for name_comb in name_combination_list:
                 probas = best_model.predict_proba(X_test_scaled)[:, 1]
                 preds_train = best_model.predict(X_train_scaled)
                 probas_train = best_model.predict_proba(X_train_scaled)[:, 1]
+                
                 # To see which hyperparameters were selected
                 print(model.best_params_)
+                param_pick = model.best_params_
+                for key in param_grid:
+                    try:
+                        index = param_grid[key].index(param_pick[key])
+                        param_count[key][index]+=1
+                    except ValueError:
+                        print("Element not found.")
+                print(param_count)
+
+                # Print n_iter if available
                 if hasattr(best_model, "n_iter_"):
                     print("n_iter: ",best_model.n_iter_)
                 elif hasattr(best_model, "steps"):
