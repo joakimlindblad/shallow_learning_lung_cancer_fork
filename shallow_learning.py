@@ -72,10 +72,10 @@ def init_rf():
 
 def init_logreg():
     param_grid = {
-        'C': np.round(np.logspace(-1, 3, 12),decimals=4).tolist(),  # Try a wide range of regularization strengths
+        'C': np.round(np.logspace(-2, 3, 12),decimals=4).tolist(),  # Try a wide range of regularization strengths
         'penalty': ['l1', 'l2'],      # Test both L1 and L2 regularization
         'solver': ['liblinear'],  # Solvers that support L1 and L2 penalties
-        'tol': [1e-6],
+        'tol': [1e-5],
         'max_iter': [10000]   # Ensure enough iterations for convergence
     }
     log_reg = LogisticRegression(random_state=42)
@@ -92,10 +92,10 @@ logreg_pipe = Pipeline([
 def init_logreg_poly():
     param_grid = {
         #  'poly__interaction_only': [False],   # Worse performance
-        'lr__C': np.round(np.logspace(-1, 3, 12),decimals=4).tolist(),  # Try a wide range of regularization strengths
+        'lr__C': np.round(np.logspace(-2, 3, 12),decimals=4).tolist(),  # Try a wide range of regularization strengths
         'lr__penalty': ['l1', 'l2'],      # Test both L1 and L2 regularization
         'lr__solver': ['liblinear'],  # Solvers that support L1 and L2 penalties
-        'lr__tol': [1e-6],
+        'lr__tol': [1e-5],
         'lr__max_iter': [10000]   # Ensure enough iterations for convergence
     }
     return GridSearchCV(logreg_pipe, param_grid, cv=5, scoring='roc_auc', n_jobs=-1)
@@ -135,20 +135,20 @@ morphologies = column_names[6:9]
 densities = column_names[9:]
 part_names = {"clinical parameters": clinical_parameters, "morphologies": morphologies, "densities": densities}
 
-# name_combination_list = [
-#     ["clinical parameters","morphologies","densities"],
-#     ["clinical parameters","morphologies"],
-#     ["clinical parameters","densities"],
-#     ["morphologies","densities"],
-#     ["clinical parameters"],
-#     ["morphologies"],
-#     ["densities"]
-# ]
-
 name_combination_list = [
+    ["clinical parameters","morphologies","densities"],
+    ["clinical parameters","morphologies"],
+    ["clinical parameters","densities"],
+    ["morphologies","densities"],
     ["clinical parameters"],
-    ["morphologies"]
+    ["morphologies"],
+    ["densities"]
 ]
+
+# name_combination_list = [
+#     ["clinical parameters"],
+#     ["morphologies"]
+# ]
 
 split_folder = BOMI2_dataset_path+"binary_survival_prediction/100foldcrossvalrepeat/"
 num_splits = len([x for x in os.listdir(split_folder) if "test" in x])
