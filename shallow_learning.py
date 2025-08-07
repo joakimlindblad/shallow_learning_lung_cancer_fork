@@ -23,6 +23,10 @@ from sklearn.preprocessing import PolynomialFeatures
 #from sklearn.preprocessing import RobustScaler
 #from sklearn.preprocessing import FunctionTransformer
 
+from sklearn.metrics import matthews_corrcoef, make_scorer
+from sklearn.model_selection import RepeatedStratifiedKFold
+
+
 #import warnings 
 #warnings.filterwarnings("ignore")
 
@@ -68,18 +72,28 @@ def init_rf():
         'max_samples' : [0.3,0.5,0.7]
     }
     rf = RandomForestClassifier(random_state=42, n_jobs=-1)
-    return GridSearchCV(rf, param_grid, cv=5, scoring='roc_auc', n_jobs=-1)
+
+    cv_fun = RepeatedStratifiedKFold(n_splits=3, n_repeats=10, random_state=42)
+    return GridSearchCV(rf, param_grid, cv=cv_fun, scoring='roc_auc', n_jobs=-1)
+    #return GridSearchCV(rf, param_grid, cv=5, scoring='roc_auc', n_jobs=-1)
 
 def init_logreg():
     param_grid = {
-        'C': np.round(np.logspace(-3, 3, 12),decimals=4).tolist(),  # Try a wide range of regularization strengths
+        'C': np.round(np.logspace(-4, 3, 12),decimals=4).tolist(),  # Try a wide range of regularization strengths
         'penalty': ['l1', 'l2'],      # Test both L1 and L2 regularization
         'solver': ['liblinear'],  # Solvers that support L1 and L2 penalties
         'tol': [1e-5],
-        'max_iter': [10000]   # Ensure enough iterations for convergence
+        'max_iter': [1000]   # Ensure enough iterations for convergence
     }
     log_reg = LogisticRegression(random_state=42)
-    return GridSearchCV(log_reg, param_grid, cv=5, scoring='roc_auc', n_jobs=-1)
+    cv_fun = RepeatedStratifiedKFold(n_splits=3, n_repeats=10, random_state=42)
+
+    #return GridSearchCV(log_reg, param_grid, cv=5, scoring='accuracy', n_jobs=-1)
+    #return GridSearchCV(log_reg, param_grid, cv=5, scoring='roc_auc', n_jobs=-1)
+    return GridSearchCV(log_reg, param_grid, cv=cv_fun, scoring='roc_auc', n_jobs=-1)
+    #return GridSearchCV(log_reg, param_grid, cv=cv_fun, scoring=make_scorer(matthews_corrcoef), n_jobs=-1)
+    #return GridSearchCV(log_reg, param_grid, cv=5, scoring=make_scorer(matthews_corrcoef), n_jobs=-1)
+#    return RandomizedSearchCV(log_reg, param_distributions=param_grid, n_iter=20, scoring='roc_auc', n_jobs=-1, cv=5)
 
 # Create a pipeline with polynomial features, scaling, and Logistic Regression
 logreg_pipe = Pipeline([
@@ -115,8 +129,8 @@ def init_knn():
     return GridSearchCV(knn, param_grid, cv=5, scoring='roc_auc', n_jobs=-1)
 
 model_registry = {
-#    "RF": init_rf,
-    "LogReg": init_logreg,
+    "RF": init_rf,
+#   "LogReg": init_logreg,
 #    "LogRegPoly": init_logreg_poly,
 #    "SVM": init_svm,
 #    "KNN": init_knn,
@@ -184,11 +198,13 @@ for name_comb in name_combination_list:
         preds_logits = []
 
         param_grid = model_fn().param_grid
+        #param_grid = model_fn().param_distributions
         for key in param_grid:
             param_grid[key]=dict.fromkeys(param_grid[key], 0)
 
         print(f"{experiment_name}-{model_name}:")
         sum_iter=None
+        max_iter=None
         pbar=tqdm(range(num_splits), desc=f"{experiment_name}-{model_name}", leave=False)
         for split in pbar:
             train_ids = pd.read_csv(os.path.join(split_folder, f"split_{split}_train_val.csv"))["ID"]
@@ -231,6 +247,7 @@ for name_comb in name_combination_list:
                     n_iter=bm.n_iter_[0]
                     pbar.set_postfix({"n_iter":n_iter})
                     sum_iter = sum_iter+n_iter if sum_iter is not None else n_iter
+                    max_iter = max(max_iter,n_iter) if max_iter is not None else n_iter
 
             # Metrics
             acc = accuracy_score(y_test["label"], preds)
@@ -274,9 +291,11 @@ for name_comb in name_combination_list:
                     permutation_importances.append(pi.importances_mean)
 
         if sum_iter is not None:
-            print(f"Avg. n_iter: {sum_iter/num_splits}")
+            print(f"Avg. n_iter: {sum_iter/num_splits}; Max n_iter: {max_iter}")
         print(param_grid)
 
+        print(f"Train accuracy mean: {np.mean(train_accs):.4f}    Test accuracy mean: {np.mean(test_accs):.4f}")
+    
         # Aggregate results for results_dict
         results_dict["Experiment"].append(experiment_name)
         results_dict["Model"].append(model_name)
