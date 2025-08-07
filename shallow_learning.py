@@ -60,8 +60,8 @@ class RandomClassifier:
 
 def init_rf():
     param_grid = {
-        'n_estimators': [200],
-        'max_depth': [3, 5],
+        'n_estimators': [100, 200],
+        'max_depth': [3, 5, 7],
         'min_samples_split': [2],
         'min_samples_leaf': [1],
         'max_features': ['sqrt'],
@@ -72,7 +72,7 @@ def init_rf():
 
 def init_logreg():
     param_grid = {
-        'C': np.round(np.logspace(-1, 4, 14),decimals=4).tolist(),  # Try a wide range of regularization strengths
+        'C': np.round(np.logspace(-1, 3, 12),decimals=4).tolist(),  # Try a wide range of regularization strengths
         'penalty': ['l1', 'l2'],      # Test both L1 and L2 regularization
         'solver': ['liblinear'],  # Solvers that support L1 and L2 penalties
         'tol': [1e-6],
@@ -92,7 +92,7 @@ logreg_pipe = Pipeline([
 def init_logreg_poly():
     param_grid = {
         #  'poly__interaction_only': [False],   # Worse performance
-        'lr__C': np.logspace(-1, 4, 14).tolist(),  # Try a wide range of regularization strengths
+        'lr__C': np.round(np.logspace(-1, 3, 12),decimals=4).tolist(),  # Try a wide range of regularization strengths
         'lr__penalty': ['l1', 'l2'],      # Test both L1 and L2 regularization
         'lr__solver': ['liblinear'],  # Solvers that support L1 and L2 penalties
         'lr__tol': [1e-6],
@@ -102,7 +102,7 @@ def init_logreg_poly():
 
 def init_svm():
     param_grid = {
-        'C': [0.1, 1, 10, 20],
+        'C': [0.1, 1, 10, 20, 40],
         'kernel': ['linear', 'rbf'],
         'gamma': ['scale', 'auto'],
     }
@@ -115,10 +115,10 @@ def init_knn():
     return GridSearchCV(knn, param_grid, cv=5, scoring='roc_auc', n_jobs=-1)
 
 model_registry = {
-#    "RF": init_rf,
+    "RF": init_rf,
     "LogReg": init_logreg,
-#    "LogRegPoly": init_logreg_poly,
-#    "SVM": init_svm,
+    "LogRegPoly": init_logreg_poly,
+    "SVM": init_svm,
     "KNN": init_knn,
 #    "Random": lambda: RandomClassifier()
 }
@@ -146,7 +146,7 @@ part_names = {"clinical parameters": clinical_parameters, "morphologies": morpho
 # ]
 
 name_combination_list = [
-#    ["clinical parameters"],
+    ["clinical parameters"],
     ["morphologies"]
 ]
 
