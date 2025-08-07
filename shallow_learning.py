@@ -72,7 +72,7 @@ def init_rf():
 
 def init_logreg():
     param_grid = {
-        'C': np.round(np.logspace(-2, 3, 12),decimals=4).tolist(),  # Try a wide range of regularization strengths
+        'C': np.round(np.logspace(-3, 3, 12),decimals=4).tolist(),  # Try a wide range of regularization strengths
         'penalty': ['l1', 'l2'],      # Test both L1 and L2 regularization
         'solver': ['liblinear'],  # Solvers that support L1 and L2 penalties
         'tol': [1e-5],
@@ -92,7 +92,7 @@ logreg_pipe = Pipeline([
 def init_logreg_poly():
     param_grid = {
         #  'poly__interaction_only': [False],   # Worse performance
-        'lr__C': np.round(np.logspace(-2, 3, 12),decimals=4).tolist(),  # Try a wide range of regularization strengths
+        'lr__C': np.round(np.logspace(-3, 3, 12),decimals=4).tolist(),  # Try a wide range of regularization strengths
         'lr__penalty': ['l1', 'l2'],      # Test both L1 and L2 regularization
         'lr__solver': ['liblinear'],  # Solvers that support L1 and L2 penalties
         'lr__tol': [1e-5],
@@ -115,11 +115,11 @@ def init_knn():
     return GridSearchCV(knn, param_grid, cv=5, scoring='roc_auc', n_jobs=-1)
 
 model_registry = {
-    "RF": init_rf,
+#    "RF": init_rf,
     "LogReg": init_logreg,
-    "LogRegPoly": init_logreg_poly,
-    "SVM": init_svm,
-    "KNN": init_knn,
+#    "LogRegPoly": init_logreg_poly,
+#    "SVM": init_svm,
+#    "KNN": init_knn,
 #    "Random": lambda: RandomClassifier()
 }
 
