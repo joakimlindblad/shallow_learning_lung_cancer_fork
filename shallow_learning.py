@@ -62,8 +62,8 @@ def init_rf():
     param_grid = {
         'n_estimators': [100, 200],
         'max_depth': [3, 5, 7],
-        'min_samples_split': [2],
-        'min_samples_leaf': [1],
+        'min_samples_split': [2,4],
+        'min_samples_leaf': [1,2],
         'max_features': ['sqrt'],
         'max_samples' : [0.3,0.5,0.7]
     }
@@ -116,10 +116,10 @@ def init_knn():
 
 model_registry = {
     "RF": init_rf,
-    "LogReg": init_logreg,
-    "LogRegPoly": init_logreg_poly,
-    "SVM": init_svm,
-    "KNN": init_knn,
+#    "LogReg": init_logreg,
+#    "LogRegPoly": init_logreg_poly,
+#    "SVM": init_svm,
+#    "KNN": init_knn,
 #    "Random": lambda: RandomClassifier()
 }
 
@@ -144,11 +144,6 @@ name_combination_list = [
     ["morphologies"],
     ["densities"]
 ]
-
-# name_combination_list = [
-#     ["clinical parameters"],
-#     ["morphologies"]
-# ]
 
 split_folder = BOMI2_dataset_path+"binary_survival_prediction/100foldcrossvalrepeat/"
 num_splits = len([x for x in os.listdir(split_folder) if "test" in x])
@@ -175,7 +170,7 @@ all_auc = {}
 for name_comb in name_combination_list:
     experiment_name = "_".join(name_comb)
     feature_list = sum([part_names[part] for part in name_comb], [])
-    print(f"=== Experiment: {experiment_name} | Features: {feature_list}")
+    print(f" == Experiment: {experiment_name} | Features: {feature_list}")
 
     X_experiment = X[feature_list]
     for model_name, model_fn in model_registry.items():
@@ -344,7 +339,7 @@ for name_comb in name_combination_list:
 
 # Save results to CSV
 results = pd.DataFrame(results_dict)
-results.to_csv("results_shallow_learning2_full.csv", index=False)
+results.to_csv("results_shallow_learning3_full.csv", index=False)
 
 # Paired t-test vs clinical baseline (only for accuracy/AUC)
 p_value_stats = {"experiment": [], "model": [], "Accuracy": [], "AUC": []}
