@@ -116,10 +116,10 @@ def init_knn():
 
 model_registry = {
     "RF": init_rf,
-#    "LogReg": init_logreg,
-#    "LogRegPoly": init_logreg_poly,
-#    "SVM": init_svm,
-#    "KNN": init_knn,
+    "LogReg": init_logreg,
+    "LogRegPoly": init_logreg_poly,
+    "SVM": init_svm,
+    "KNN": init_knn,
 #    "Random": lambda: RandomClassifier()
 }
 
