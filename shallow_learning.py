@@ -66,16 +66,16 @@ def init_rf():
     param_grid = {
         'n_estimators': [100, 200],
         'max_depth': [3, 5, 7],
-        'min_samples_split': [2,4],
-        'min_samples_leaf': [1,2],
+        'min_samples_split': [2],
+        'min_samples_leaf': [1,2,3],
         'max_features': ['sqrt'],
-        'max_samples' : [0.3,0.5,0.7]
+        'max_samples' : [0.25,0.5,0.75]
     }
     rf = RandomForestClassifier(random_state=42, n_jobs=-1)
 
-    cv_fun = RepeatedStratifiedKFold(n_splits=3, n_repeats=10, random_state=42)
-    return GridSearchCV(rf, param_grid, cv=cv_fun, scoring='roc_auc', n_jobs=-1)
-    #return GridSearchCV(rf, param_grid, cv=5, scoring='roc_auc', n_jobs=-1)
+ ##   cv_fun = RepeatedStratifiedKFold(n_splits=3, n_repeats=10, random_state=42)
+ ##   return GridSearchCV(rf, param_grid, cv=cv_fun, scoring='roc_auc', n_jobs=-1)
+    return GridSearchCV(rf, param_grid, cv=5, scoring='roc_auc', n_jobs=-1)
 
 def init_logreg():
     param_grid = {
